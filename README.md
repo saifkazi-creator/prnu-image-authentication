@@ -14,4 +14,3 @@ The system verifies whether a test image matches an enrolled camera’s sensor f
 - PRNU fingerprint construction via averaging
 - Correlation-based matching
 - Threshold-based decision (REAL / NOT AUTHENTIC / UNCERTAIN)
-
