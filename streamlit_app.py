@@ -101,7 +101,7 @@ with st.sidebar:
         st.markdown(f"&nbsp;&nbsp;→ {s}", unsafe_allow_html=True)
 
     st.markdown("---")
-    models_dir = st.text_input("Models directory", value="outputs/models")
+    models_dir = st.text_input("Models directory", value="models")
 
 # ────────────────────────────────────────────────────────────────────
 # Header
