@@ -11,7 +11,7 @@ Image
  → Real / AI  +  Confidence Score
 ```
 
-> **Trained on ~10,000 images** — 5,000 real camera photos (COCO 2017) + 5,000 AI-generated images (DiffusionDB / Kaggle multi-generator dataset covering Stable Diffusion, GAN, and other generators).
+> **Trained on ~20,000 images** — 10,000 real camera photos (COCO 2017 + Kaggle real images) + 10,000 AI-generated images (DiffusionDB Stable Diffusion + Kaggle multi-generator dataset covering GAN, SDXL, and other generators).
 
 ---
 
