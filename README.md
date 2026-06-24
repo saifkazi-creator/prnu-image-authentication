@@ -19,13 +19,15 @@ Image
 
 | Model | Accuracy | F1 | ROC-AUC |
 |---|---|---|---|
-| **SVM** ✓ best | **93.2%** | **0.930** | **0.977** |
-| MLP | 93.0% | 0.929 | 0.977 |
-| XGBoost | 93.0% | 0.928 | 0.972 |
-| LightGBM | 92.8% | 0.926 | 0.974 |
-| RandomForest | 92.3% | 0.921 | 0.970 |
+| RandomForest | 87.8% | 0.875 | 0.943 |
+| XGBoost | 87.5% | 0.873 | 0.948 |
+| SVM | 87.6% | 0.874 | 0.944 |
+| LightGBM | 87.8% | 0.876 | 0.948 |
+| **MLP** ✓ best | **88.2%** | **0.881** | **0.951** |
 
-Evaluated on a held-out test set of 1,999 images (stratified 80/20 split).
+Evaluated on a held-out test set (stratified 80/20 split) across 20,000 images from multiple AI generators.
+
+> Accuracy is lower than single-generator benchmarks by design — the model is trained on diverse AI generators (SD, GAN, SDXL) making it a harder and more realistic task. A model scoring 93% on SD-only data will fail on DALL·E or Midjourney images; this model generalises across generators.
 
 ---
 
@@ -49,13 +51,13 @@ ai_image_detector/
 │   └── predict.py                  single-image inference CLI
 │
 ├── models/                         ← pre-trained model files
-│   ├── model.pkl                   best trained classifier (SVM)
+│   ├── model.pkl                   best trained classifier (MLP)
 │   ├── scaler.pkl                  StandardScaler fitted on training data
 │   └── feature_cols.pkl            feature column order for inference
 │
 ├── outputs/                        ← auto-generated on training run
 │   ├── features/
-│   │   └── features.csv            extracted feature matrix (9992 rows × 39 features)
+│   │   └── features.csv            extracted feature matrix (~20,000 rows × 39 features)
 │   ├── residuals/                  noise residual PNG visualisations
 │   └── figures/                    EDA plots, confusion matrices, ROC curves, SHAP
 │
@@ -120,6 +122,7 @@ dataset/ai/     ← JPG / PNG AI-generated images (min 256×256 px)
 | Real | RAISE-8k (8,156 DSLR photos) | https://loki.disi.unitn.it/RAISE/ |
 | AI | DiffusionDB 2m_first_5k | https://huggingface.co/datasets/poloclub/diffusiondb |
 | AI | Kaggle AI vs Human dataset | https://www.kaggle.com/datasets/alessandrasala79/ai-vs-human-generated-dataset |
+| AI | MS COCOAI (SD3, SDXL, DALL·E 3, MJ v6) | https://huggingface.co/datasets/Rajarshi-Roy-research/Defactify_Image_Dataset |
 | AI | DALL·E 3 1M dataset | https://huggingface.co/datasets/ProGamerGov/synthetic-dataset-1m-dalle3-high-quality-captions |
 
 > **Important:** Use images that are at least **256×256 pixels**. Small thumbnails (e.g. CIFAKE at 32×32) will not work — the pipeline upscales them which destroys the noise residual.
@@ -172,7 +175,7 @@ Sample output:
 ```
 ──────────────────────────────────────────────────
   Prediction  :  AI Generated Image
-  Confidence  :  91.24 %
+  Confidence  :  88.74 %
 ──────────────────────────────────────────────────
 
   Top forensic features:
@@ -229,7 +232,7 @@ Step 4 — Feature Extraction (39 features across 6 groups)
   File: src/features.py
 
 Step 5 — Classification
-  StandardScaler → trained SVM / RF / XGB / LGBM / MLP
+  StandardScaler → trained MLP / SVM / RF / XGB / LGBM
   File: src/train.py
 ```
 
@@ -248,10 +251,19 @@ Step 5 — Classification
 
 ## Known Limitations
 
-- **Generator-specific:** Model accuracy drops on AI generators not represented in training data. Best results when training data includes images from multiple generators (SD, DALL·E, Midjourney, GAN).
+- **Unseen generators:** Model accuracy drops on AI generators not in training data (e.g. Gemini, Flux). Adding images from new generators and retraining resolves this.
 - **Resolution dependent:** Images below 256×256 px produce unreliable residuals. Do not use thumbnail datasets.
 - **Heavy post-processing:** Images that have been heavily compressed, filtered, or resized after generation may fool the detector.
 - **Not a deepfake detector:** This system is designed for fully AI-generated images, not face-swaps or partial manipulations.
+
+---
+
+## Future Improvements
+
+- Add training data from Gemini (Imagen 3), DALL·E 3, Flux, and Midjourney
+- Experiment with deep learning feature extractors (CNN-based residual analysis)
+- Add batch inference support for processing entire folders
+- Improve Streamlit UI with side-by-side comparison mode
 
 ---
 
