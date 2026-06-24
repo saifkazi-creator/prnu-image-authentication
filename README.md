@@ -1,16 +1,31 @@
 # PRNU-Inspired AI Image Forensic Detector
 
-Classifies images as **Real Camera** or **AI Generated** using sensor-noise
-residual analysis and machine learning — no deep learning required.
+Classifies images as **Real Camera** or **AI Generated** using sensor-noise residual analysis and machine learning — no deep learning required.
 
 ```
 Image
  → DB8 Wavelet Denoising
  → Noise Residual (Original − Denoised)
- → 42-dimensional Forensic Feature Vector
+ → 39-dimensional Forensic Feature Vector
  → Classifier (RF / XGB / SVM / LGBM / MLP)
  → Real / AI  +  Confidence Score
 ```
+
+> **Trained on ~10,000 images** — 5,000 real camera photos (COCO 2017) + 5,000 AI-generated images (DiffusionDB / Kaggle multi-generator dataset covering Stable Diffusion, GAN, and other generators).
+
+---
+
+## Results
+
+| Model | Accuracy | F1 | ROC-AUC |
+|---|---|---|---|
+| **SVM** ✓ best | **93.2%** | **0.930** | **0.977** |
+| MLP | 93.0% | 0.929 | 0.977 |
+| XGBoost | 93.0% | 0.928 | 0.972 |
+| LightGBM | 92.8% | 0.926 | 0.974 |
+| RandomForest | 92.3% | 0.921 | 0.970 |
+
+Evaluated on a held-out test set of 1,999 images (stratified 80/20 split).
 
 ---
 
@@ -18,25 +33,35 @@ Image
 
 ```
 ai_image_detector/
-├── dataset/
-│   ├── real/          ← real camera photographs
-│   └── ai/            ← AI-generated images
-├── src/
-│   ├── preprocessing.py   grayscale, resize, normalise
-│   ├── denoising.py       DB8 multi-level wavelet denoising
-│   ├── residual.py        noise residual extraction
-│   ├── features.py        6-group forensic feature extraction
-│   ├── pipeline.py        end-to-end pipeline
-│   ├── train.py           training script
-│   ├── evaluate.py        metrics + all visualisations
-│   └── predict.py         single-image inference CLI
-├── models/                saved model.pkl / scaler.pkl
-├── outputs/
-│   ├── features/          features.csv
-│   ├── residuals/         noise residual images
-│   └── figures/           all EDA + evaluation plots
-├── streamlit_app.py       interactive web UI
-├── requirements.txt
+│
+├── dataset/                        ← images go here (not committed to git)
+│   ├── real/                       ← real camera photographs (JPG/PNG)
+│   └── ai/                         ← AI-generated images (JPG/PNG)
+│
+├── src/                            ← all source code
+│   ├── preprocessing.py            grayscale, resize to 512×512, normalise
+│   ├── denoising.py                DB8 multi-level wavelet denoising
+│   ├── residual.py                 noise residual = original − denoised
+│   ├── features.py                 39 forensic features across 6 groups
+│   ├── pipeline.py                 end-to-end orchestrator
+│   ├── train.py                    training script (5 classifiers)
+│   ├── evaluate.py                 metrics, plots, SHAP analysis
+│   └── predict.py                  single-image inference CLI
+│
+├── models/                         ← pre-trained model files
+│   ├── model.pkl                   best trained classifier (SVM)
+│   ├── scaler.pkl                  StandardScaler fitted on training data
+│   └── feature_cols.pkl            feature column order for inference
+│
+├── outputs/                        ← auto-generated on training run
+│   ├── features/
+│   │   └── features.csv            extracted feature matrix (9992 rows × 39 features)
+│   ├── residuals/                  noise residual PNG visualisations
+│   └── figures/                    EDA plots, confusion matrices, ROC curves, SHAP
+│
+├── streamlit_app.py                interactive web UI
+├── requirements.txt                pip dependencies
+├── .gitignore
 └── README.md
 ```
 
@@ -45,27 +70,70 @@ ai_image_detector/
 ## Installation
 
 ```bash
-# 1. Create a virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+# 1. Clone the repository
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd ai_image_detector
 
-# 2. Install dependencies
+# 2. Create a virtual environment
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
 ---
 
-## Dataset Setup
+## Quick Start — Inference Only (no training needed)
 
-Populate the two sub-directories:
+Pre-trained model files are included in the `models/` folder. Just install dependencies and run:
+
+```bash
+# CLI prediction
+python src/predict.py --image path/to/your/image.jpg
+
+# Web UI
+streamlit run streamlit_app.py
+```
+
+---
+
+## Dataset Setup (for training from scratch)
+
+Populate the two sub-directories with images:
 
 ```
-dataset/real/   ← jpg / jpeg / png  (real photos from camera)
-dataset/ai/     ← jpg / jpeg / png  (AI-generated images)
+dataset/real/   ← JPG / PNG real camera photos  (min 256×256 px)
+dataset/ai/     ← JPG / PNG AI-generated images (min 256×256 px)
 ```
 
-At least **100 images per class** is recommended for meaningful training;
-**500+** per class gives robust results.
+**Recommended sources:**
+
+| Class | Dataset | Link |
+|---|---|---|
+| Real | COCO 2017 val (5,000 images) | https://cocodataset.org/#download |
+| Real | RAISE-8k (8,156 DSLR photos) | https://loki.disi.unitn.it/RAISE/ |
+| AI | DiffusionDB 2m_first_5k | https://huggingface.co/datasets/poloclub/diffusiondb |
+| AI | Kaggle AI vs Human dataset | https://www.kaggle.com/datasets/alessandrasala79/ai-vs-human-generated-dataset |
+| AI | DALL·E 3 1M dataset | https://huggingface.co/datasets/ProGamerGov/synthetic-dataset-1m-dalle3-high-quality-captions |
+
+> **Important:** Use images that are at least **256×256 pixels**. Small thumbnails (e.g. CIFAKE at 32×32) will not work — the pipeline upscales them which destroys the noise residual.
+
+> **Important:** Convert all WEBP images to JPG before training:
+> ```bash
+> python -c "
+> from PIL import Image
+> from pathlib import Path
+> for f in Path('dataset/ai').rglob('*.webp'):
+>     Image.open(f).convert('RGB').save(f.with_suffix('.jpg'), quality=95)
+>     f.unlink()
+> "
+> ```
 
 ---
 
@@ -75,111 +143,134 @@ At least **100 images per class** is recommended for meaningful training;
 # Full training run
 python src/train.py --dataset dataset/ --output outputs/
 
-# Limit images per class for a quick experiment
-python src/train.py --dataset dataset/ --output outputs/ --max-imgs 200
+# Limit images per class (quick experiment)
+python src/train.py --dataset dataset/ --output outputs/ --max-imgs 500
 
-# Force feature re-extraction (ignores existing features.csv)
+# Force re-extraction even if features.csv exists
 python src/train.py --dataset dataset/ --output outputs/ --rebuild-csv
 ```
 
-What happens:
-1. Every image is passed through the forensic pipeline → 42 features.
-2. Features are saved to `outputs/features/features.csv`.
-3. EDA figures are saved to `outputs/figures/`.
-4. Five classifiers are trained with 5-fold cross-validation.
-5. The best model by F1 is saved to `outputs/models/model.pkl`.
-6. Feature importance and SHAP plots are saved.
+**What the training script does:**
+1. Loads every image from `dataset/real/` and `dataset/ai/`
+2. Runs each through the forensic pipeline → 39 features per image
+3. Saves all features to `outputs/features/features.csv`
+4. Trains 5 classifiers with 5-fold stratified cross-validation
+5. Evaluates on a held-out 20% test set
+6. Saves the best model to `models/model.pkl`
+7. Generates evaluation plots, SHAP analysis, and feature importance charts
 
 ---
 
-## Inference (CLI)
+## Inference
 
+**CLI:**
 ```bash
 python src/predict.py --image path/to/image.jpg
 ```
 
 Sample output:
-
 ```
 ──────────────────────────────────────────────────
-  Prediction  :  Real Image
-  Confidence  :  94.37 %
+  Prediction  :  AI Generated Image
+  Confidence  :  91.24 %
 ──────────────────────────────────────────────────
 
   Top forensic features:
-    f_noise_energy                    :   8234.217300
-    b_total_energy                    :   8234.217300
-    c_fft_mean_mag                    :    432.881200
+    f_noise_energy                    :   1823.441200
+    b_total_energy                    :   1823.441200
+    c_fft_spectral_entropy            :      6.982100
+    d_acorr_max                       :      0.412300
     ...
 ```
 
----
-
-## Streamlit UI
-
+**Streamlit UI:**
 ```bash
 streamlit run streamlit_app.py
 ```
 
-Open `http://localhost:8501` in your browser.
-
-Features:
-- Upload any image (JPG / JPEG / PNG)
-- View original, denoised, and residual side by side
-- Prediction verdict + confidence gauge
-- Interactive bar chart of all 42 features
-- Feature-group energy radar chart
-- Full feature table
+Open `http://localhost:8501`. Features:
+- Upload any JPG / PNG image
+- View original, denoised, and noise residual side by side
+- Prediction verdict with confidence gauge
+- Interactive bar chart of all 39 forensic features
+- Feature group energy radar chart
+- Full feature value table
 - Forensic interpretation guide
 
 ---
 
-## Feature Groups Explained
+## How It Works
 
-### Why these features distinguish Real from AI
+### The Core Idea
 
-| Group | Features | Rationale |
+A real camera sensor has microscopic physical imperfections — dust, uneven pixel sensitivity, manufacturing variation. These imprint a unique invisible pattern onto every photo called **PRNU (Photo Response Non-Uniformity)**. It is too faint to see but survives in the noise residual.
+
+AI generators have no physical sensor. Stable Diffusion, DALL·E, Midjourney etc. synthesise pixels mathematically from a neural network. Their residuals instead reveal generator artifacts — periodic patterns from GAN convolutional layers, spectral signatures from diffusion U-Net denoising steps.
+
+### Pipeline
+
+```
+Step 1 — Preprocessing
+  Convert to grayscale → resize to 512×512 → normalise to [0, 1]
+  File: src/preprocessing.py
+
+Step 2 — DB8 Wavelet Denoising
+  Decompose with Daubechies-8 wavelet (5 levels)
+  Threshold detail sub-bands with soft thresholding (MAD noise estimate)
+  Reconstruct → denoised image (scene without noise)
+  File: src/denoising.py
+
+Step 3 — Noise Residual Extraction
+  Residual = Original − Denoised
+  Z-score normalise → zero mean, unit variance
+  File: src/residual.py
+
+Step 4 — Feature Extraction (39 features across 6 groups)
+  File: src/features.py
+
+Step 5 — Classification
+  StandardScaler → trained SVM / RF / XGB / LGBM / MLP
+  File: src/train.py
+```
+
+### Feature Groups
+
+| Group | Features | Why it works |
 |---|---|---|
-| **A – Statistics** | mean, variance, std, RMS, skewness, kurtosis, entropy | Real camera PRNU is signal-dependent and slightly non-Gaussian. AI residuals are often more Gaussian (diffusion) or heavy-tailed (GAN). |
-| **B – Energy** | total_energy, avg_energy | Genuine sensor noise injects a consistent, predictable amount of PRNU energy. AI models produce either very low or irregularly patterned energy. |
-| **C – FFT** | mean/var magnitude, spectral entropy, peak mag, high/low freq ratios | GANs leave periodic spectral peaks from transposed-convolution strides. Diffusion U-Nets inflate low-frequency residual energy. Flat spectrum → real camera. |
-| **D – Autocorrelation** | max, mean, variance of off-peak autocorrelation | Sensor noise is spatially nearly white → fast autocorrelation decay. Convolution layers in AI generators produce long-range spatial structure. |
-| **E – Wavelet sub-bands** | LL / LH / HL / HH mean, variance, entropy, energy | Real cameras concentrate noise in the HH (finest detail) sub-band. AI generators with coarse-to-fine synthesis leak energy into LL. |
-| **F – PRNU-style** | noise variance, energy, residual correlation, local consistency | Classical PRNU fingerprinting metrics adapted for binary classification. AI-generated residuals are spatially inconsistent in characteristic ways. |
+| **A – Statistics** | mean, variance, std, RMS, skewness, kurtosis, entropy | Real PRNU is signal-dependent and non-Gaussian. AI residuals are more Gaussian (diffusion) or heavy-tailed (GAN). |
+| **B – Energy** | total_energy, avg_energy | Sensors inject consistent PRNU energy. AI generators produce irregular energy levels. |
+| **C – FFT** | mean/var magnitude, spectral entropy, peak, high/low freq ratio | GANs leave periodic spectral peaks from stride patterns. Diffusion U-Nets inflate low-frequency energy. |
+| **D – Autocorrelation** | max, mean, variance | Real sensor noise decays in 1–2 pixels. AI convolutional layers create long-range spatial correlation. |
+| **E – Wavelet sub-bands** | LL/LH/HL/HH mean, variance, entropy, energy | Real cameras concentrate noise in HH. AI generators leak energy into LL from coarse-to-fine synthesis. |
+| **F – PRNU-style** | noise variance, energy, residual correlation, local consistency | True PRNU is spatially uniform. AI patterns vary locally in characteristic ways. |
 
 ---
 
-## Recommended Datasets
+## Known Limitations
 
-### Real Camera Images
-| Dataset | Source | Notes |
-|---|---|---|
-| **RAISE** (8,156 raw photos) | https://loki.disi.unitn.it/RAISE/ | Diverse cameras, unprocessed RAW |
-| **Dresden Image Database** | https://forensics.inf.tu-dresden.de/ddimgdb/ | Multi-device, standard for PRNU research |
-| **MIT-Adobe FiveK** | https://data.csail.mit.edu/graphics/fivek/ | 5,000 DSLR shots |
-| **COCO** (real photos) | https://cocodataset.org/ | Large-scale, diverse scenes |
-
-### AI-Generated Images
-| Dataset / Source | Generator | Notes |
-|---|---|---|
-| **CIFAKE** (60,000 AI images) | Stable Diffusion v1.4 | Paired with CIFAR-10 real images |
-| **DiffusionDB** | Stable Diffusion | 14 M images with prompts |
-| **JourneyDB** | Midjourney v5 | 4 M high-quality images |
-| **GenImage** benchmark | SD, DALL-E, Midjourney, Wukong | Multi-generator benchmark dataset |
-| **DALL-E 3 API** | DALL-E 3 | Generate via OpenAI API |
-| **Flux.1 inference** | Flux (Black Forest Labs) | Run locally via diffusers |
-
-### Quick-start mix suggestion
-For a balanced binary classification experiment, combine:
-- **Real**: ~1,000 images from RAISE or Dresden
-- **AI**: ~1,000 images from CIFAKE or DiffusionDB
+- **Generator-specific:** Model accuracy drops on AI generators not represented in training data. Best results when training data includes images from multiple generators (SD, DALL·E, Midjourney, GAN).
+- **Resolution dependent:** Images below 256×256 px produce unreliable residuals. Do not use thumbnail datasets.
+- **Heavy post-processing:** Images that have been heavily compressed, filtered, or resized after generation may fool the detector.
+- **Not a deepfake detector:** This system is designed for fully AI-generated images, not face-swaps or partial manipulations.
 
 ---
 
 ## Reproducibility
 
-All random seeds are set via `--seed` (default `42`).
-The feature CSV is deterministic; re-running with the same seed yields identical splits.
+All random seeds are set via `--seed` (default `42`). The feature CSV is deterministic — re-running with the same seed and dataset produces identical results.
+
+---
+
+## Requirements
+
+```
+numpy, scipy, Pillow, PyWavelets, scikit-learn
+xgboost, lightgbm, shap
+matplotlib, seaborn, pandas, joblib
+streamlit, plotly, tqdm, scikit-image
+```
+
+Install all with: `pip install -r requirements.txt`
 
 ---
 
